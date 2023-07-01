@@ -1,0 +1,47 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+ENV['VAGRANT_EXPERIMENTAL'] = "disks"
+
+Vagrant.configure("2") do |config|
+    config.vm.box = "centos/7"    
+    config.vm.provider "virtualbox" do |v|
+        v.memory = 512
+        v.cpus = 1
+    end
+
+    config.vm.define "server" do |server|
+        server.vm.network "private_network", ip: "192.168.56.21", virtualbox__intnet: "net1"
+        server.vm.hostname = "server"
+        server.vm.disk :disk, size: "2GB", name: "backup"
+		server.vm.provision 'shell', inline: <<-SERVERSHELL
+		yum install -y epel-release
+		yum install -y borgbackup sshpass
+		sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/g' /etc/ssh/sshd_config  
+		systemctl restart sshd
+		mkdir -p /var/backup
+		mkfs.xfs -q /dev/sdb
+		mount /dev/sdb /var/backup
+		useradd -m borg
+		echo password | passwd borg --stdin
+		chown borg:borg /var/backup/
+				SERVERSHELL
+    end
+	
+    config.vm.define "client" do |client|
+        client.vm.network "private_network", ip: "192.168.56.20", virtualbox__intnet: "net1"
+        client.vm.hostname = "client"
+		client.vm.provision 'shell', inline: <<-CLIENTSHELL
+		yum install -y epel-release
+		yum install -y borgbackup sshpass nano
+		ssh-keygen -b 2048 -t rsa -q -N '' -f ~/.ssh/id_rsa
+        sshpass -p password ssh-copy-id -o StrictHostKeyChecking=no borg@192.168.56.21
+		borg init -e none borg@192.168.56.21:/var/backup/
+		cp /vagrant/borg-backup.service /etc/systemd/system
+		cp /vagrant/borg-backup.timer /etc/systemd/system
+		systemctl enable borg-backup.timer
+		systemctl start borg-backup.timer
+		systemctl enable borg-backup.service
+		systemctl start borg-backup.service
+	CLIENTSHELL
+    end   
+end

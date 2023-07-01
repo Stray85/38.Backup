@@ -1,0 +1,5 @@
+[Unit]
+Description=Borg Backup
+[Service]
+Type=oneshot
+ExecStart=/bin/borg create --stats borg@192.168.56.21:/var/backup/::"etc-{now:%Y-%m-%d_%H:%M:%S}" /etc
